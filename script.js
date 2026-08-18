@@ -127,13 +127,15 @@
 
         if (DAY_PATTERN.test(firstCell)) {
           const observation = clean(dataRow[68]);
-          if (observation.toLocaleLowerCase("pt-BR") === "falta") {
+          const isFullAbsence = observation.toLocaleLowerCase("pt-BR") === "falta";
+          if (isFullAbsence) {
             employee.daysToDiscount += 1;
+          } else {
+            employee.absenceMinutes += ABSENCE_COLUMNS.reduce(
+              (total, columnIndex) => total + toMinutes(dataRow[columnIndex]),
+              0,
+            );
           }
-          employee.absenceMinutes += ABSENCE_COLUMNS.reduce(
-            (total, columnIndex) => total + toMinutes(dataRow[columnIndex]),
-            0,
-          );
           employee.hasData = true;
         }
       }
