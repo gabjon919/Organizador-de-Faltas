@@ -96,6 +96,17 @@
     return `${String(hours).padStart(2, "0")}:${String(remainingMinutes).padStart(2, "0")}`;
   }
 
+  function mostCommonPositiveValue(values) {
+    const counts = new Map();
+    values.forEach((value) => {
+      if (value > 0) counts.set(value, (counts.get(value) || 0) + 1);
+    });
+
+    return [...counts.entries()].sort(
+      (first, second) => second[1] - first[1] || second[0] - first[0],
+    )[0]?.[0] || 0;
+  }
+
   function parseEmployees(rows) {
     const employees = [];
 
@@ -120,6 +131,7 @@
         }
       }
 
+      const dailyRecords = [];
       for (let dataIndex = index + 1; dataIndex < rows.length; dataIndex += 1) {
         const dataRow = rows[dataIndex];
         const firstCell = clean(dataRow[0]);
@@ -129,19 +141,34 @@
           const observation = clean(dataRow[68]);
           const normalizedObservation = observation.toLocaleLowerCase("pt-BR");
           const isFullAbsence = normalizedObservation === "falta";
-          const hasAbsenceInObservation = normalizedObservation.includes("falta");
+          const absenceMinutes = ABSENCE_COLUMNS.reduce(
+            (total, columnIndex) => total + toMinutes(dataRow[columnIndex]),
+            0,
+          );
+
           if (isFullAbsence) {
             employee.daysToDiscount += 1;
           }
-          if (!hasAbsenceInObservation) {
-            employee.absenceMinutes += ABSENCE_COLUMNS.reduce(
-              (total, columnIndex) => total + toMinutes(dataRow[columnIndex]),
-              0,
-            );
-          }
+
+          dailyRecords.push({ absenceMinutes, isFullAbsence });
           employee.hasData = true;
         }
       }
+
+      const fullDayAbsenceMinutes = mostCommonPositiveValue(
+        dailyRecords
+          .filter((record) => record.isFullAbsence)
+          .map((record) => record.absenceMinutes),
+      );
+      employee.absenceMinutes = dailyRecords.reduce((total, record) => {
+        if (
+          record.isFullAbsence ||
+          (fullDayAbsenceMinutes > 0 && record.absenceMinutes === fullDayAbsenceMinutes)
+        ) {
+          return total;
+        }
+        return total + record.absenceMinutes;
+      }, 0);
 
       if (employee.name && employee.hasData) employees.push(employee);
     }
