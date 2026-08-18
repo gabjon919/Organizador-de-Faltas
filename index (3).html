@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Converta relatórios de frequência em uma planilha XLSX organizada por departamento."
+    />
+    <title>Conversor de frequência</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero">
+        <div class="eyebrow"><span class="eyebrow-dot"></span> Departamento pessoal</div>
+        <h1>Do relatório de frequência para o seu XLSX.</h1>
+        <p class="hero-copy">
+          Selecione o CSV do sistema de ponto e gere uma planilha pronta para
+          conferência, separada por departamento.
+        </p>
+      </section>
+
+      <section class="workspace-card" aria-label="Conversor de arquivo">
+        <div class="upload-zone" id="uploadZone" tabindex="0" role="button">
+          <input id="fileInput" type="file" accept=".csv,text/csv" hidden />
+          <div class="upload-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" />
+              <path d="M5 14.5v3A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-3" />
+            </svg>
+          </div>
+          <div class="upload-content">
+            <strong id="uploadTitle">Arraste o CSV para cá</strong>
+            <span id="uploadHint">ou clique para procurar no seu computador</span>
+          </div>
+          <button class="browse-button" id="browseButton" type="button">Selecionar arquivo</button>
+        </div>
+
+        <div class="file-summary hidden" id="fileSummary">
+          <div class="file-summary-main">
+            <div class="csv-badge">CSV</div>
+            <div>
+              <strong id="fileName">arquivo.csv</strong>
+              <span id="fileDetails">Pronto para processar</span>
+            </div>
+          </div>
+          <button class="text-button" id="changeFileButton" type="button">Trocar arquivo</button>
+        </div>
+
+        <div class="action-row">
+          <div class="calculation-note">
+            <span class="info-icon">i</span>
+            <span>Horas calculadas pelas colunas de ausências do relatório.</span>
+          </div>
+          <button class="primary-button" id="generateButton" type="button" disabled>
+            <span>Gerar planilha XLSX</span>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 12h13m-5-5 5 5-5 5" />
+            </svg>
+          </button>
+        </div>
+      </section>
+
+      <div class="alert hidden" id="alert" role="alert"></div>
+
+      <section class="results hidden" id="results" aria-live="polite">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow">Resultado da leitura</div>
+            <h2>Conferência dos descontos</h2>
+          </div>
+          <button class="download-button" id="downloadButton" type="button">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 4v11m0 0 4-4m-4 4-4-4M5 20h14" />
+            </svg>
+            Baixar XLSX
+          </button>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">Funcionários</span>
+            <strong id="employeeCount">0</strong>
+            <span class="stat-caption">encontrados no arquivo</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Departamentos</span>
+            <strong id="departmentCount">0</strong>
+            <span class="stat-caption">abas na planilha</span>
+          </div>
+          <div class="stat-card accent-card">
+            <span class="stat-label">Dias a descontar</span>
+            <strong id="dayCount">0</strong>
+            <span class="stat-caption">faltas identificadas</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Horas a descontar</span>
+            <strong id="hourCount">00:00</strong>
+            <span class="stat-caption">de ausências</span>
+          </div>
+        </div>
+
+        <div class="table-card">
+          <div class="table-toolbar">
+            <div>
+              <strong>Prévia dos dados</strong>
+              <span id="tableDescription">Confira antes de baixar o arquivo.</span>
+            </div>
+            <label class="search-box">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="10.8" cy="10.8" r="6.3"></circle>
+                <path d="m16 16 4.2 4.2"></path>
+              </svg>
+              <input id="searchInput" type="search" placeholder="Buscar funcionário..." />
+            </label>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Funcionário</th>
+                  <th>Cargo</th>
+                  <th>Departamento</th>
+                  <th class="numeric">Dias a descontar</th>
+                  <th class="numeric">Horas a descontar</th>
+                </tr>
+              </thead>
+              <tbody id="previewBody"></tbody>
+            </table>
+          </div>
+          <div class="empty-state hidden" id="emptyState">
+            Nenhum funcionário corresponde à busca.
+          </div>
+        </div>
+
+        <div class="rules-note">
+          <div class="rules-icon">✓</div>
+          <div>
+            <strong>Como o cálculo funciona</strong>
+            <p>
+              “Dias a descontar” considera apenas ocorrências marcadas como
+              <b>Falta</b>. As “Horas a descontar” somam as horas preenchidas
+              nas colunas de ausências, incluindo faltas de marcação e saídas
+              antecipadas.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <span>Processamento local</span>
+        <span class="footer-separator">•</span>
+        <span>Os dados não saem do seu navegador</span>
+      </footer>
+    </main>
+
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
