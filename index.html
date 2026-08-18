@@ -1,167 +1,402 @@
-<!doctype html>
-<html lang="pt-BR">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      name="description"
-      content="Converta relatórios de frequência em uma planilha XLSX organizada por departamento."
-    />
-    <title>Conversor de frequência</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="style.css" />
-  </head>
-  <body>
-    <main class="app-shell">
-      <section class="hero">
-        <div class="eyebrow"><span class="eyebrow-dot"></span> Departamento pessoal</div>
-        <h1>Do relatório de frequência para o seu XLSX.</h1>
-        <p class="hero-copy">
-          Selecione o CSV do sistema de ponto e gere uma planilha pronta para
-          conferência, separada por departamento.
-        </p>
-      </section>
+/* global XLSX */
 
-      <section class="workspace-card" aria-label="Conversor de arquivo">
-        <div class="upload-zone" id="uploadZone" tabindex="0" role="button">
-          <input id="fileInput" type="file" accept=".csv,text/csv" hidden />
-          <div class="upload-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none">
-              <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" />
-              <path d="M5 14.5v3A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-3" />
-            </svg>
-          </div>
-          <div class="upload-content">
-            <strong id="uploadTitle">Arraste o CSV para cá</strong>
-            <span id="uploadHint">ou clique para procurar no seu computador</span>
-          </div>
-          <button class="browse-button" id="browseButton" type="button">Selecionar arquivo</button>
-        </div>
+(function () {
+  "use strict";
 
-        <div class="file-summary hidden" id="fileSummary">
-          <div class="file-summary-main">
-            <div class="csv-badge">CSV</div>
-            <div>
-              <strong id="fileName">arquivo.csv</strong>
-              <span id="fileDetails">Pronto para processar</span>
-            </div>
-          </div>
-          <button class="text-button" id="changeFileButton" type="button">Trocar arquivo</button>
-        </div>
+  const ABSENCE_COLUMNS = [47, 54, 60];
+  const DAY_PATTERN = /^\d{2}\/\d{2}\s/;
 
-        <div class="action-row">
-          <div class="calculation-note">
-            <span class="info-icon">i</span>
-            <span>Horas calculadas pelas colunas de ausências do relatório.</span>
-          </div>
-          <button class="primary-button" id="generateButton" type="button" disabled>
-            <span>Gerar planilha XLSX</span>
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M5 12h13m-5-5 5 5-5 5" />
-            </svg>
-          </button>
-        </div>
-      </section>
+  const state = {
+    file: null,
+    employees: [],
+    workbook: null,
+  };
 
-      <div class="alert hidden" id="alert" role="alert"></div>
+  const elements = {
+    uploadZone: document.getElementById("uploadZone"),
+    fileInput: document.getElementById("fileInput"),
+    browseButton: document.getElementById("browseButton"),
+    changeFileButton: document.getElementById("changeFileButton"),
+    uploadTitle: document.getElementById("uploadTitle"),
+    uploadHint: document.getElementById("uploadHint"),
+    fileSummary: document.getElementById("fileSummary"),
+    fileName: document.getElementById("fileName"),
+    fileDetails: document.getElementById("fileDetails"),
+    generateButton: document.getElementById("generateButton"),
+    downloadButton: document.getElementById("downloadButton"),
+    alert: document.getElementById("alert"),
+    results: document.getElementById("results"),
+    employeeCount: document.getElementById("employeeCount"),
+    departmentCount: document.getElementById("departmentCount"),
+    dayCount: document.getElementById("dayCount"),
+    hourCount: document.getElementById("hourCount"),
+    tableDescription: document.getElementById("tableDescription"),
+    previewBody: document.getElementById("previewBody"),
+    emptyState: document.getElementById("emptyState"),
+    searchInput: document.getElementById("searchInput"),
+  };
 
-      <section class="results hidden" id="results" aria-live="polite">
-        <div class="section-heading">
-          <div>
-            <div class="eyebrow">Resultado da leitura</div>
-            <h2>Conferência dos descontos</h2>
-          </div>
-          <button class="download-button" id="downloadButton" type="button">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 4v11m0 0 4-4m-4 4-4-4M5 20h14" />
-            </svg>
-            Baixar XLSX
-          </button>
-        </div>
+  function clean(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
+  }
 
-        <div class="stats-grid">
-          <div class="stat-card">
-            <span class="stat-label">Funcionários</span>
-            <strong id="employeeCount">0</strong>
-            <span class="stat-caption">encontrados no arquivo</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">Departamentos</span>
-            <strong id="departmentCount">0</strong>
-            <span class="stat-caption">abas na planilha</span>
-          </div>
-          <div class="stat-card accent-card">
-            <span class="stat-label">Dias a descontar</span>
-            <strong id="dayCount">0</strong>
-            <span class="stat-caption">faltas identificadas</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">Horas a descontar</span>
-            <strong id="hourCount">00:00</strong>
-            <span class="stat-caption">de ausências</span>
-          </div>
-        </div>
+  function parseCSV(text) {
+    const rows = [];
+    let row = [];
+    let cell = "";
+    let quoted = false;
 
-        <div class="table-card">
-          <div class="table-toolbar">
-            <div>
-              <strong>Prévia dos dados</strong>
-              <span id="tableDescription">Confira antes de baixar o arquivo.</span>
-            </div>
-            <label class="search-box">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="10.8" cy="10.8" r="6.3"></circle>
-                <path d="m16 16 4.2 4.2"></path>
-              </svg>
-              <input id="searchInput" type="search" placeholder="Buscar funcionário..." />
-            </label>
-          </div>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Funcionário</th>
-                  <th>Cargo</th>
-                  <th>Departamento</th>
-                  <th class="numeric">Dias a descontar</th>
-                  <th class="numeric">Horas a descontar</th>
-                </tr>
-              </thead>
-              <tbody id="previewBody"></tbody>
-            </table>
-          </div>
-          <div class="empty-state hidden" id="emptyState">
-            Nenhum funcionário corresponde à busca.
-          </div>
-        </div>
+    for (let i = 0; i < text.length; i += 1) {
+      const character = text[i];
+      const next = text[i + 1];
 
-        <div class="rules-note">
-          <div class="rules-icon">✓</div>
-          <div>
-            <strong>Como o cálculo funciona</strong>
-            <p>
-              “Dias a descontar” considera apenas ocorrências marcadas como
-              <b>Falta</b>. As “Horas a descontar” somam as horas preenchidas
-              nas colunas de ausências somente nos dias cuja observação não
-              contém “Falta”.
-            </p>
-          </div>
-        </div>
-      </section>
+      if (character === '"') {
+        if (quoted && next === '"') {
+          cell += '"';
+          i += 1;
+        } else {
+          quoted = !quoted;
+        }
+      } else if (character === "," && !quoted) {
+        row.push(cell);
+        cell = "";
+      } else if ((character === "\n" || character === "\r") && !quoted) {
+        if (character === "\r" && next === "\n") i += 1;
+        row.push(cell);
+        if (row.some((value) => clean(value) !== "")) rows.push(row);
+        row = [];
+        cell = "";
+      } else {
+        cell += character;
+      }
+    }
 
-      <footer>
-        <span>Processamento local</span>
-        <span class="footer-separator">•</span>
-        <span>Os dados não saem do seu navegador</span>
-      </footer>
-    </main>
+    if (cell || row.length) {
+      row.push(cell);
+      if (row.some((value) => clean(value) !== "")) rows.push(row);
+    }
 
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-    <script src="script.js"></script>
-  </body>
-</html>
+    return rows;
+  }
+
+  function firstValue(row, start, end) {
+    return row.slice(start, end).map(clean).find(Boolean) || "";
+  }
+
+  function toMinutes(value) {
+    const match = clean(value).match(/^(\d{1,3}):(\d{2})$/);
+    if (!match) return 0;
+    return Number(match[1]) * 60 + Number(match[2]);
+  }
+
+  function formatHours(minutes) {
+    const safeMinutes = Math.max(0, Number(minutes) || 0);
+    const hours = Math.floor(safeMinutes / 60);
+    const remainingMinutes = safeMinutes % 60;
+    return `${String(hours).padStart(2, "0")}:${String(remainingMinutes).padStart(2, "0")}`;
+  }
+
+  function mostCommonPositiveValue(values) {
+    const counts = new Map();
+    values.forEach((value) => {
+      if (value > 0) counts.set(value, (counts.get(value) || 0) + 1);
+    });
+
+    return [...counts.entries()].sort(
+      (first, second) => second[1] - first[1] || second[0] - first[0],
+    )[0]?.[0] || 0;
+  }
+
+  function parseEmployees(rows) {
+    const employees = [];
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      if (clean(row[0]) !== "Funcionário:") continue;
+
+      const employee = {
+        name: firstValue(row, 1, 48),
+        department: "Sem departamento",
+        role: "Não informado",
+        daysToDiscount: 0,
+        absenceMinutes: 0,
+        hasData: false,
+      };
+
+      for (let headerIndex = index + 1; headerIndex < Math.min(index + 4, rows.length); headerIndex += 1) {
+        const headerRow = rows[headerIndex];
+        if (clean(headerRow[0]) === "Departamento:") {
+          employee.department = firstValue(headerRow, 1, 48) || "Sem departamento";
+          employee.role = firstValue(headerRow, 49, 73) || "Não informado";
+        }
+      }
+
+      const dailyRecords = [];
+      for (let dataIndex = index + 1; dataIndex < rows.length; dataIndex += 1) {
+        const dataRow = rows[dataIndex];
+        const firstCell = clean(dataRow[0]);
+        if (firstCell === "Funcionário:") break;
+
+        if (DAY_PATTERN.test(firstCell)) {
+          const observation = clean(dataRow[68]);
+          const normalizedObservation = observation.toLocaleLowerCase("pt-BR");
+          const isFullAbsence = normalizedObservation === "falta";
+          const absenceMinutes = ABSENCE_COLUMNS.reduce(
+            (total, columnIndex) => total + toMinutes(dataRow[columnIndex]),
+            0,
+          );
+
+          if (isFullAbsence) {
+            employee.daysToDiscount += 1;
+          }
+
+          dailyRecords.push({ absenceMinutes, isFullAbsence });
+          employee.hasData = true;
+        }
+      }
+
+      const fullDayAbsenceMinutes = mostCommonPositiveValue(
+        dailyRecords
+          .filter((record) => record.isFullAbsence)
+          .map((record) => record.absenceMinutes),
+      );
+      employee.absenceMinutes = dailyRecords.reduce((total, record) => {
+        if (
+          record.isFullAbsence ||
+          (fullDayAbsenceMinutes > 0 && record.absenceMinutes === fullDayAbsenceMinutes)
+        ) {
+          return total;
+        }
+        return total + record.absenceMinutes;
+      }, 0);
+
+      if (employee.name && employee.hasData) employees.push(employee);
+    }
+
+    return employees;
+  }
+
+  function uniqueSheetName(department, usedNames) {
+    const invalidCharacters = /[\\/?*[\]:]/g;
+    const base = (clean(department).replace(invalidCharacters, "-") || "Sem departamento").slice(0, 31);
+    let name = base;
+    let suffix = 2;
+
+    while (usedNames.has(name)) {
+      const ending = ` (${suffix})`;
+      name = `${base.slice(0, 31 - ending.length)}${ending}`;
+      suffix += 1;
+    }
+
+    usedNames.add(name);
+    return name;
+  }
+
+  function groupByDepartment(employees) {
+    return employees.reduce((groups, employee) => {
+      const department = employee.department || "Sem departamento";
+      if (!groups[department]) groups[department] = [];
+      groups[department].push(employee);
+      return groups;
+    }, {});
+  }
+
+  function escapeHTML(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function renderPreview(employees) {
+    const query = clean(elements.searchInput.value).toLocaleLowerCase("pt-BR");
+    const filtered = employees.filter((employee) => {
+      const searchable = `${employee.name} ${employee.role} ${employee.department}`.toLocaleLowerCase("pt-BR");
+      return searchable.includes(query);
+    });
+
+    elements.previewBody.innerHTML = filtered
+      .map(
+        (employee) => `
+          <tr>
+            <td>${escapeHTML(employee.name)}</td>
+            <td>${escapeHTML(employee.role)}</td>
+            <td>${escapeHTML(employee.department)}</td>
+            <td class="numeric">${employee.daysToDiscount}</td>
+            <td class="numeric hours-cell">${formatHours(employee.absenceMinutes)}</td>
+          </tr>
+        `,
+      )
+      .join("");
+
+    elements.emptyState.classList.toggle("hidden", filtered.length !== 0);
+  }
+
+  function buildWorkbook(employees) {
+    const workbook = XLSX.utils.book_new();
+    const groups = groupByDepartment(employees);
+    const usedSheetNames = new Set();
+
+    Object.entries(groups)
+      .sort(([first], [second]) => first.localeCompare(second, "pt-BR"))
+      .forEach(([department, departmentEmployees]) => {
+        const sheetRows = [
+          ["Funcionário", "Cargo", "Dias a descontar", "Horas a descontar"],
+          ...departmentEmployees
+            .slice()
+            .sort((first, second) => first.name.localeCompare(second.name, "pt-BR"))
+            .map((employee) => [
+              employee.name,
+              employee.role,
+              employee.daysToDiscount,
+              formatHours(employee.absenceMinutes),
+            ]),
+        ];
+
+        const sheet = XLSX.utils.aoa_to_sheet(sheetRows);
+        sheet["!cols"] = [
+          { wch: 38 },
+          { wch: 34 },
+          { wch: 19 },
+          { wch: 20 },
+        ];
+        sheet["!autofilter"] = { ref: `A1:D${sheetRows.length}` };
+        XLSX.utils.book_append_sheet(workbook, sheet, uniqueSheetName(department, usedSheetNames));
+      });
+
+    return workbook;
+  }
+
+  function showAlert(message) {
+    elements.alert.textContent = message;
+    elements.alert.classList.remove("hidden");
+  }
+
+  function hideAlert() {
+    elements.alert.classList.add("hidden");
+    elements.alert.textContent = "";
+  }
+
+  function resetResults() {
+    state.employees = [];
+    state.workbook = null;
+    elements.results.classList.add("hidden");
+    elements.searchInput.value = "";
+    elements.previewBody.innerHTML = "";
+    hideAlert();
+  }
+
+  function updateFileUI(file) {
+    state.file = file;
+    elements.uploadTitle.textContent = file.name;
+    elements.uploadHint.textContent = "Arquivo selecionado. Clique em gerar para continuar.";
+    elements.fileName.textContent = file.name;
+    elements.fileDetails.textContent = `${(file.size / 1024).toFixed(1)} KB · CSV`;
+    elements.fileSummary.classList.remove("hidden");
+    elements.generateButton.disabled = false;
+    elements.uploadZone.classList.add("has-file");
+  }
+
+  function chooseFile(file) {
+    if (!file) return;
+    if (!file.name.toLocaleLowerCase("pt-BR").endsWith(".csv")) {
+      showAlert("Selecione um arquivo no formato CSV.");
+      return;
+    }
+    hideAlert();
+    resetResults();
+    updateFileUI(file);
+  }
+
+  function processFile() {
+    if (!state.file) return;
+
+    const reader = new FileReader();
+    elements.generateButton.disabled = true;
+    elements.generateButton.querySelector("span").textContent = "Lendo relatório...";
+    hideAlert();
+
+    reader.onload = () => {
+      try {
+        const rows = parseCSV(String(reader.result || "").replace(/^\uFEFF/, ""));
+        const employees = parseEmployees(rows);
+        if (!employees.length) {
+          throw new Error("Não encontrei blocos de funcionários no CSV.");
+        }
+
+        state.employees = employees;
+        state.workbook = buildWorkbook(employees);
+        const departments = Object.keys(groupByDepartment(employees));
+        const totalDays = employees.reduce((total, employee) => total + employee.daysToDiscount, 0);
+        const totalMinutes = employees.reduce((total, employee) => total + employee.absenceMinutes, 0);
+
+        elements.employeeCount.textContent = employees.length.toLocaleString("pt-BR");
+        elements.departmentCount.textContent = departments.length.toLocaleString("pt-BR");
+        elements.dayCount.textContent = totalDays.toLocaleString("pt-BR");
+        elements.hourCount.textContent = formatHours(totalMinutes);
+        elements.tableDescription.textContent = `${employees.length} funcionário${employees.length === 1 ? "" : "s"} · ${departments.length} departamento${departments.length === 1 ? "" : "s"}`;
+        renderPreview(employees);
+        elements.results.classList.remove("hidden");
+        elements.generateButton.querySelector("span").textContent = "Gerar planilha XLSX";
+        elements.generateButton.disabled = false;
+        elements.results.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        showAlert(error instanceof Error ? error.message : "Não foi possível ler o arquivo.");
+        elements.generateButton.querySelector("span").textContent = "Gerar planilha XLSX";
+        elements.generateButton.disabled = false;
+      }
+    };
+
+    reader.onerror = () => {
+      showAlert("Não foi possível abrir o CSV. Tente selecionar o arquivo novamente.");
+      elements.generateButton.querySelector("span").textContent = "Gerar planilha XLSX";
+      elements.generateButton.disabled = false;
+    };
+
+    reader.readAsText(state.file, "UTF-8");
+  }
+
+  function downloadWorkbook() {
+    if (!state.workbook || typeof XLSX === "undefined") {
+      showAlert("A biblioteca de exportação ainda não carregou. Atualize a página e tente novamente.");
+      return;
+    }
+
+    const date = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(state.workbook, `descontos_frequencia_${date}.xlsx`);
+  }
+
+  elements.uploadZone.addEventListener("click", (event) => {
+    if (event.target !== elements.browseButton) elements.fileInput.click();
+  });
+  elements.uploadZone.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      elements.fileInput.click();
+    }
+  });
+  elements.browseButton.addEventListener("click", () => elements.fileInput.click());
+  elements.changeFileButton.addEventListener("click", () => elements.fileInput.click());
+  elements.fileInput.addEventListener("change", () => chooseFile(elements.fileInput.files[0]));
+  elements.generateButton.addEventListener("click", processFile);
+  elements.downloadButton.addEventListener("click", downloadWorkbook);
+  elements.searchInput.addEventListener("input", () => renderPreview(state.employees));
+
+  ["dragenter", "dragover"].forEach((eventName) => {
+    elements.uploadZone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      elements.uploadZone.classList.add("dragover");
+    });
+  });
+  ["dragleave", "drop"].forEach((eventName) => {
+    elements.uploadZone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      elements.uploadZone.classList.remove("dragover");
+    });
+  });
+  elements.uploadZone.addEventListener("drop", (event) => {
+    chooseFile(event.dataTransfer.files[0]);
+  });
+})();
